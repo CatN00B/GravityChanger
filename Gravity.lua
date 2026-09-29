@@ -3,13 +3,17 @@ local function setGravity(g)
     memory_write("float", p + 0x22c, g)
 end
 
-local target, autoApply = 100.0, true
+local target, autoApply = 196.2, true
 local lastApplied = nil
 
 local PRESETS = {
-    {"Earth (100)", 100.0}, {"Moon (16.6)", 16.6}, {"Mars (37.8)", 37.8},
-    {"Jupiter (247.9)", 247.9}, {"Zero-G (0)", 0.0},
-    {"Inverted (-10)", -10.0}, {"Hyper (999)", 999.0},
+    {"Default (196.2)", 196.2},
+    {"Moon (32.7)",     32.7},
+    {"Mars (74.2)",     74.2},
+    {"Jupiter (464)",   464.0},
+    {"Zero-G (0)",      0.0},
+    {"Inverted (-10)",  -10.0},
+    {"Hyper (999)",     999.0},
 }
 
 task.spawn(function()
@@ -51,7 +55,7 @@ end
 UI.AddTab("Gravity Changer+", function(tab)
     local L = tab:Section("Gravity Settings", "Left")
 
-    L:SliderFloat("grav_value", "Gravity", -500, 500, target, "%.1f",
+    L:SliderFloat("grav_value", "Gravity", -1000, 1000, target, "%.1f",
         function(v)
             target = v
             if autoApply then
@@ -80,7 +84,7 @@ UI.AddTab("Gravity Changer+", function(tab)
     local items = {}
     for _, p in ipairs(PRESETS) do table.insert(items, p[1]) end
 
-    L:Combo("grav_preset", "Presets", items, 0, function(i)
+    L:Combo("grav_preset", "Preset", items, 0, function(i)
         target = PRESETS[i + 1][2]
         UI.SetValue("grav_value", target)
         setGravity(target)
