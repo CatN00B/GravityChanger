@@ -58,6 +58,7 @@ UI.AddTab("Gravity Changer+", function(tab)
     L:SliderFloat("grav_value", "Gravity", -1000, 1000, target, "%.1f",
         function(v)
             target = v
+            UI.SetValue("grav_preset", 0)  
             if autoApply then
                 setGravity(target)
                 lastApplied = target
@@ -81,15 +82,16 @@ UI.AddTab("Gravity Changer+", function(tab)
         print("[Gravity] Applied:", target)
     end)
 
-    local items = {}
+    local items = {"Manual"}
     for _, p in ipairs(PRESETS) do table.insert(items, p[1]) end
 
     L:Combo("grav_preset", "Preset", items, 0, function(i)
-        target = PRESETS[i + 1][2]
+        if i == 0 then return end  
+        target = PRESETS[i][2]     
         UI.SetValue("grav_value", target)
         setGravity(target)
         lastApplied = target
-        print("[Gravity] Preset:", PRESETS[i + 1][1], "=", target)
+        print("[Gravity] Preset:", PRESETS[i][1], "=", target)
     end)
 
     local R = tab:Section("Config", "Right")
