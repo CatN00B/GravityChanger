@@ -23,7 +23,6 @@ local function apply(v)
     target, lastApplied = v, v
     setGravity(v)
     UI.SetValue("grav_value", v)
-    UI.SetValue("grav_preset", 0)
 end
 
 task.spawn(function()
@@ -42,6 +41,7 @@ task.spawn(function()
         if rndOn then
             local r, lo, hi = roll()
             apply(r)
+            UI.SetValue("grav_preset", 0)
             notify(string.format("Random: %.1f  [%.0f ... %.0f]", r, lo, hi), "Gravity Changer+", 1)
             print("[Gravity] Random roll:", r)
         end
@@ -53,6 +53,7 @@ task.spawn(function()
     while true do
         if flipOn then
             apply(-target)
+            UI.SetValue("grav_preset", 0)
             print("[Gravity] Flip:", target)
         end
         wait(flipInt)
@@ -120,6 +121,7 @@ UI.AddTab("Gravity Changer+", function(tab)
 
     L:Button("Invert Gravity", 140, 24, function()
         apply(-target)
+        UI.SetValue("grav_preset", 0)
         notify(string.format("Inverted: %.1f", target), "Gravity Changer+", 1.5)
         print("[Gravity] Inverted:", target)
     end)
@@ -130,6 +132,7 @@ UI.AddTab("Gravity Changer+", function(tab)
     L:Combo("grav_preset", "Preset", items, 0, function(i)
         if i == 0 then return end
         apply(PRESETS[i][2])
+        UI.SetValue("grav_preset", i)
         notify(string.format("%s -> %.1f", PRESETS[i][1], target), "Gravity Changer+", 1.5)
         print("[Gravity] Preset:", PRESETS[i][1], "=", target)
     end)
@@ -157,6 +160,7 @@ UI.AddTab("Gravity Changer+", function(tab)
     R:Button("Roll Once", 140, 24, function()
         local r = roll()
         apply(r)
+        UI.SetValue("grav_preset", 0)
         notify(string.format("Rolled: %.1f", r), "Gravity Changer+", 1.5)
         print("[Gravity] Rolled:", r)
     end)
@@ -186,6 +190,7 @@ UI.AddTab("Gravity Changer+", function(tab)
         UI.SetValue("grav_rand_max", rndMax)
         UI.SetValue("grav_flip", flipOn)
         UI.SetValue("grav_flip_int", flipInt)
+        UI.SetValue("grav_preset", 0)
         setGravity(target); lastApplied = target
         print("[Gravity] Config applied")
     end)
