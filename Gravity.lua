@@ -20,12 +20,22 @@ S.gc_fn=false
 S.gc_fi=2.0
 S.gc_rc=0
 S.gc_fc=0
+S.gc_cp={}
+
+local cpInputName=""
 
 local oOn=true
 local oX,oY=20,20
 local oR,oG,oB,oA=120,255,120,1
 local oSz=18
 local oFi=5
+local oBgOn=true
+local oBgR,oBgG,oBgB=15,15,20
+local oBgA=0.55
+local oRgbOn=false
+local oRgbSpeed=60
+local oRgbThick=2
+local oRgbWasOn=false
 
 local FONTS={
     {"UI",Drawing.Fonts.UI},
@@ -51,10 +61,15 @@ local P={
 }
 
 local CFG="gravity_config.json"
+local CPCFG="gravity_custom.json"
+local cpCombo=nil
 
 local function detectPreset(v)
     for _,p in ipairs(P) do
         if math.abs(v-p[2])<0.05 then return p[1] end
+    end
+    for _,p in ipairs(S.gc_cp) do
+        if math.abs(v-p.value)<0.05 then return p.name end
     end
     return "Manual"
 end
@@ -65,6 +80,28 @@ local function roll()
     return math.floor(r*10+0.5)/10,lo,hi
 end
 
+local function esc(s)
+    return (s:gsub('\\','\\\\'):gsub('"','\\"'))
+end
+
+local function svCustom()
+    local parts={}
+    for _,p in ipairs(S.gc_cp) do
+        table.insert(parts,string.format('{"name":"%s","value":%.2f}',esc(p.name),p.value))
+    end
+    writefile(CPCFG,"["..table.concat(parts,",").."]")
+end
+
+local function ldCustom()
+    S.gc_cp={}
+    if not isfile(CPCFG) then return end
+    local ok,raw=pcall(readfile,CPCFG)
+    if not ok then return end
+    for name,val in raw:gmatch('"name":"(.-)","value":([%-%d%.]+)') do
+        table.insert(S.gc_cp,{name=name:gsub('\\"','"'):gsub('\\\\','\\'),value=tonumber(val)})
+    end
+end
+
 local function sv()
     local d=string.format(
         '{"gravity":%.2f,"autoApply":%s,'..
@@ -72,10 +109,15 @@ local function sv()
         '"flipInterval":%.2f,'..
         '"overlay":%s,"overlayX":%d,"overlayY":%d,'..
         '"ovR":%d,"ovG":%d,"ovB":%d,"ovA":%.2f,"ovSize":%d,"ovFont":%d,'..
+        '"bgOn":%s,"bgR":%d,"bgG":%d,"bgB":%d,"bgA":%.2f,'..
+        '"rgbOn":%s,"rgbSpeed":%d,"rgbThick":%d,'..
         '"rndCount":%d,"flipCount":%d}',
         S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,
         S.gc_fi,tostring(oOn),oX,oY,
-        oR,oG,oB,oA,oSz,oFi,S.gc_rc,S.gc_fc)
+        oR,oG,oB,oA,oSz,oFi,
+        tostring(oBgOn),oBgR,oBgG,oBgB,oBgA,
+        tostring(oRgbOn),oRgbSpeed,oRgbThick,
+        S.gc_rc,S.gc_fc)
     writefile(CFG,d)
 end
 
@@ -100,6 +142,14 @@ local function ld()
     oA=nm("ovA") or oA
     oSz=nm("ovSize") or oSz
     oFi=nm("ovFont") or oFi
+    oBgOn=bl("bgOn")
+    oBgR=nm("bgR") or oBgR
+    oBgG=nm("bgG") or oBgG
+    oBgB=nm("bgB") or oBgB
+    oBgA=nm("bgA") or oBgA
+    oRgbOn=bl("rgbOn")
+    oRgbSpeed=nm("rgbSpeed") or oRgbSpeed
+    oRgbThick=nm("rgbThick") or oRgbThick
     S.gc_rc=nm("rndCount") or S.gc_rc
     S.gc_fc=nm("flipCount") or S.gc_fc
     S.gc_rn=false
@@ -112,6 +162,85 @@ local function ap(v)
     sg(v)
     UI.SetValue("grav_value",v)
 end
+
+local function setDefaults()
+    S.gc_t=196.2
+    S.gc_la=nil
+    S.gc_aa=true
+    S.gc_rn=false
+    S.gc_ri=3.0
+    S.gc_rmin=-200.0
+    S.gc_rmax=1500.0
+    S.gc_fn=false
+    S.gc_fi=2.0
+    S.gc_rc=0
+    S.gc_fc=0
+    oOn=true
+    oX,oY=20,20
+    oR,oG,oB,oA=120,255,120,1
+    oSz=18
+    oFi=5
+    oBgOn=true
+    oBgR,oBgG,oBgB=15,15,20
+    oBgA=0.55
+    oRgbOn=false
+    oRgbSpeed=60
+    oRgbThick=2
+    oRgbWasOn=false
+end
+
+local function rebuildCpCombo()
+    if not cpCombo then return end
+    cpCombo:Clear()
+    cpCombo:Add("None")
+    for _,p in ipairs(S.gc_cp) do cpCombo:Add(p.name) end
+    UI.SetValue("grav_cp_combo",0)
+end
+
+local function syncUI()
+    UI.SetValue("grav_value",S.gc_t)
+    UI.SetValue("grav_auto",S.gc_aa)
+    UI.SetValue("grav_random",false)
+    UI.SetValue("grav_rand_min",S.gc_rmin)
+    UI.SetValue("grav_rand_max",S.gc_rmax)
+    UI.SetValue("grav_random_int",S.gc_ri)
+    UI.SetValue("grav_flip",false)
+    UI.SetValue("grav_flip_int",S.gc_fi)
+    UI.SetValue("grav_overlay",oOn)
+    UI.SetValue("grav_ov_font",oFi-1)
+    UI.SetValue("grav_ov_size",oSz)
+    UI.SetValue("grav_ov_x",oX)
+    UI.SetValue("grav_ov_y",oY)
+    UI.SetValue("grav_bg_on",oBgOn)
+    UI.SetValue("grav_rgb_on",oRgbOn)
+    UI.SetValue("grav_rgb_speed",oRgbSpeed)
+    UI.SetValue("grav_rgb_thick",oRgbThick)
+    UI.SetValue("grav_preset",0)
+    UI.SetValue("grav_cp_combo",0)
+end
+
+local bg=Drawing.new("Square")
+bg.Filled=true
+bg.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
+bg.Transparency=oBgA
+bg.Corner=8
+bg.Visible=false
+
+local bgLine=Drawing.new("Square")
+bgLine.Filled=false
+bgLine.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
+bgLine.Transparency=math.min(oBgA+0.25,1)
+bgLine.Thickness=1
+bgLine.Corner=8
+bgLine.Visible=false
+
+local rgbLine=Drawing.new("Square")
+rgbLine.Filled=false
+rgbLine.Color=Color3.fromRGB(255,0,0)
+rgbLine.Transparency=1
+rgbLine.Thickness=oRgbThick
+rgbLine.Corner=8
+rgbLine.Visible=false
 
 local N=3
 local ov={}
@@ -126,6 +255,8 @@ for i=1,N do
     t.Visible=false
     ov[i]=t
 end
+
+local rgbHue=0
 
 task.spawn(function()
     while true do
@@ -145,11 +276,58 @@ task.spawn(function()
                 counter,
             }
 
+            local maxLen=0
+            local visibleCount=0
+            for i=1,N do
+                if txt[i] then
+                    if #txt[i]>maxLen then maxLen=#txt[i] end
+                    visibleCount=visibleCount+1
+                end
+            end
+
+            local padX=math.floor(oSz*0.6)
+            local padY=math.floor(oSz*0.4)
+            local w=maxLen*oSz*0.6+padX*2
+            local h=(visibleCount-1)*lh+oSz+padY*2
+
+            if oBgOn and visibleCount>0 then
+                bg.Position=Vector2.new(oX,oY)
+                bg.Size=Vector2.new(w,h)
+                bg.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
+                bg.Transparency=oBgA
+                bg.Visible=true
+            else
+                bg.Visible=false
+            end
+
+            if oRgbOn and oBgOn and visibleCount>0 then
+                rgbHue=(rgbHue+oRgbSpeed*0.03)%360
+                local c=Color3.fromHSV(rgbHue/360,1,1)
+                rgbLine.Position=Vector2.new(oX,oY)
+                rgbLine.Size=Vector2.new(w,h)
+                rgbLine.Color=c
+                rgbLine.Transparency=1
+                rgbLine.Thickness=oRgbThick
+                rgbLine.Visible=true
+                bgLine.Visible=false
+            else
+                rgbLine.Visible=false
+                if oBgOn and visibleCount>0 then
+                    bgLine.Position=Vector2.new(oX,oY)
+                    bgLine.Size=Vector2.new(w,h)
+                    bgLine.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
+                    bgLine.Transparency=math.min(oBgA+0.25,1)
+                    bgLine.Visible=true
+                else
+                    bgLine.Visible=false
+                end
+            end
+
             for i=1,N do
                 local t=ov[i]
                 if txt[i] then
                     t.Text=txt[i]
-                    t.Position=Vector2.new(oX,oY+(i-1)*lh)
+                    t.Position=Vector2.new(oX+padX,oY+padY+(i-1)*lh)
                     t.Size=oSz
                     t.Color=Color3.fromRGB(oR,oG,oB)
                     t.Transparency=oA
@@ -161,6 +339,9 @@ task.spawn(function()
             end
         else
             for i=1,N do ov[i].Visible=false end
+            bg.Visible=false
+            bgLine.Visible=false
+            rgbLine.Visible=false
         end
         wait(0.1)
     end
@@ -202,6 +383,7 @@ task.spawn(function()
     end
 end)
 
+ldCustom()
 local loaded=ld()
 
 UI.AddTab("Gravity Changer+",function(tab)
@@ -215,15 +397,15 @@ UI.AddTab("Gravity Changer+",function(tab)
         S.gc_aa=v
         if v then sg(S.gc_t); S.gc_la=S.gc_t else S.gc_la=nil end
     end)
-    L:Button("Apply Now",140,24,function()
+    L:Button("Apply Now",100,20,function()
         sg(S.gc_t); S.gc_la=S.gc_t
     end)
-    L:Button("Reset to Default",140,24,function()
+    L:Button("Reset Gravity",100,20,function()
         ap(196.2)
         UI.SetValue("grav_preset",1)
-        notify("Reset to default gravity","Gravity Changer+",1.5)
+        notify("Reset gravity to default","Gravity Changer+",1.5)
     end)
-    L:Button("Invert Gravity",140,24,function()
+    L:Button("Invert Gravity",100,20,function()
         ap(-S.gc_t)
         UI.SetValue("grav_preset",0)
         notify(string.format("Inverted: %.1f",S.gc_t),"Gravity Changer+",1.5)
@@ -237,6 +419,43 @@ UI.AddTab("Gravity Changer+",function(tab)
         notify(string.format("%s -> %.1f",P[i][1],S.gc_t),"Gravity Changer+",1.5)
     end)
 
+    local CP=tab:Section("Custom Presets","Left")
+    CP:InputText("grav_cp_name","Name","",function(t)
+        cpInputName=t
+    end)
+    CP:Button("Add Preset",100,20,function()
+        if cpInputName=="" then
+            notify("Enter a name first","Gravity Changer+",1.5)
+            return
+        end
+        local fullName=string.format("%s (%.1f)",cpInputName,S.gc_t)
+        table.insert(S.gc_cp,{name=fullName,value=S.gc_t})
+        UI.SetValue("grav_cp_name","")
+        cpInputName=""
+        svCustom()
+        rebuildCpCombo()
+        notify(string.format("Added: %s",fullName),"Gravity Changer+",1.5)
+    end)
+    local cpItems={"None"}
+    for _,p in ipairs(S.gc_cp) do table.insert(cpItems,p.name) end
+    cpCombo=CP:Combo("grav_cp_combo","Custom",cpItems,0,function(i)
+        if i==0 then return end
+        ap(S.gc_cp[i].value)
+        notify(string.format("%s -> %.1f",S.gc_cp[i].name,S.gc_t),"Gravity Changer+",1.5)
+    end)
+    CP:Button("Delete Selected",100,20,function()
+        local i=UI.GetValue("grav_cp_combo")
+        if not i or i==0 then
+            notify("Select a custom preset","Gravity Changer+",1.5)
+            return
+        end
+        local removed=S.gc_cp[i]
+        table.remove(S.gc_cp,i)
+        svCustom()
+        rebuildCpCombo()
+        notify(string.format("Deleted: %s",removed.name),"Gravity Changer+",1.5)
+    end)
+
     local O=tab:Section("Overlay","Left")
     O:Toggle("grav_overlay","Show Overlay",oOn,function(v) oOn=v end)
     O:ColorPicker("grav_ov_col",oR/255,oG/255,oB/255,oA,function(c,a)
@@ -245,13 +464,35 @@ UI.AddTab("Gravity Changer+",function(tab)
         oB=math.floor(c.B*255+0.5)
         oA=a
     end)
+    O:Toggle("grav_bg_on","Show Background",oBgOn,function(v)
+        if not v then
+            oRgbWasOn=oRgbOn
+            oRgbOn=false
+            UI.SetValue("grav_rgb_on",false)
+        else
+            if oRgbWasOn then
+                oRgbOn=true
+                UI.SetValue("grav_rgb_on",true)
+            end
+        end
+        oBgOn=v
+    end)
+    O:ColorPicker("grav_bg_col",oBgR/255,oBgG/255,oBgB/255,oBgA,function(c,a)
+        oBgR=math.floor(c.R*255+0.5)
+        oBgG=math.floor(c.G*255+0.5)
+        oBgB=math.floor(c.B*255+0.5)
+        oBgA=a
+    end)
+    O:Toggle("grav_rgb_on","RGB Border",oRgbOn,function(v) oRgbOn=v end)
+    O:SliderInt("grav_rgb_speed","RGB Speed",5,200,oRgbSpeed,function(v) oRgbSpeed=v end)
+    O:SliderInt("grav_rgb_thick","RGB Width",1,6,oRgbThick,function(v) oRgbThick=v end)
     local fi={}
     for _,f in ipairs(FONTS) do table.insert(fi,f[1]) end
     O:Combo("grav_ov_font","Font",fi,oFi-1,function(i) oFi=i+1 end)
     O:SliderInt("grav_ov_size","Size",8,48,oSz,function(v) oSz=v end)
     O:SliderInt("grav_ov_x","X",0,1920,oX,function(v) oX=v end)
     O:SliderInt("grav_ov_y","Y",0,1080,oY,function(v) oY=v end)
-    O:Button("Reset Stats",140,24,function()
+    O:Button("Reset Stats",100,20,function()
         S.gc_rc=0
         S.gc_fc=0
         sv()
@@ -269,7 +510,7 @@ UI.AddTab("Gravity Changer+",function(tab)
         if S.gc_rmax<S.gc_rmin then S.gc_rmin=S.gc_rmax; UI.SetValue("grav_rand_min",S.gc_rmin) end
     end)
     R:SliderFloat("grav_random_int","Interval (s)",0.5,15.0,S.gc_ri,"%.1f",function(v) S.gc_ri=v end)
-    R:Button("Roll Once",140,24,function()
+    R:Button("Roll Once",100,20,function()
         local r=roll()
         ap(r)
         UI.SetValue("grav_preset",0)
@@ -285,42 +526,36 @@ UI.AddTab("Gravity Changer+",function(tab)
 
     local C=tab:Section("Config","Right")
     C:Text("Save / Load")
-    C:Button("Save",140,24,function()
+    C:Button("Save",100,20,function()
         sv()
+        svCustom()
         print("[Gravity] Saved")
     end)
-    C:Button("Load",140,24,function()
+    C:Button("Load",100,20,function()
+        ldCustom()
         if ld() then
-            UI.SetValue("grav_value",S.gc_t)
-            UI.SetValue("grav_auto",S.gc_aa)
-            UI.SetValue("grav_rand_min",S.gc_rmin)
-            UI.SetValue("grav_rand_max",S.gc_rmax)
-            UI.SetValue("grav_random_int",S.gc_ri)
-            UI.SetValue("grav_flip_int",S.gc_fi)
-            UI.SetValue("grav_overlay",oOn)
-            UI.SetValue("grav_ov_font",oFi-1)
-            UI.SetValue("grav_ov_size",oSz)
-            UI.SetValue("grav_ov_x",oX)
-            UI.SetValue("grav_ov_y",oY)
-            UI.SetValue("grav_preset",0)
-            UI.SetValue("grav_random",false)
-            UI.SetValue("grav_flip",false)
+            syncUI()
+            rebuildCpCombo()
             sg(S.gc_t); S.gc_la=S.gc_t
             notify("Config loaded","Gravity Changer+",1.5)
         end
     end)
+    C:Button("Reset to Default",100,20,function()
+        setDefaults()
+        syncUI()
+        sg(S.gc_t); S.gc_la=S.gc_t
+        notify("Reset to defaults","Gravity Changer+",1.5)
+    end)
+    C:Button("Delete Config",100,20,function()
+        if isfile(CFG) then delfile(CFG) end
+        setDefaults()
+        syncUI()
+        sg(S.gc_t); S.gc_la=S.gc_t
+        notify("Config deleted (custom presets kept)","Gravity Changer+",1.5)
+    end)
 
     if loaded then
-        UI.SetValue("grav_value",S.gc_t)
-        UI.SetValue("grav_auto",S.gc_aa)
-        UI.SetValue("grav_rand_min",S.gc_rmin)
-        UI.SetValue("grav_rand_max",S.gc_rmax)
-        UI.SetValue("grav_random_int",S.gc_ri)
-        UI.SetValue("grav_flip_int",S.gc_fi)
-        UI.SetValue("grav_overlay",oOn)
-        UI.SetValue("grav_ov_font",oFi-1)
-        UI.SetValue("grav_ov_size",oSz)
-        UI.SetValue("grav_ov_x",oX)
-        UI.SetValue("grav_ov_y",oY)
+        syncUI()
     end
+    rebuildCpCombo()
 end)
