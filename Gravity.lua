@@ -21,6 +21,15 @@ S.gc_fi=2.0
 S.gc_rc=0
 S.gc_fc=0
 S.gc_cp={}
+S.an_speed=8
+S.an_hold=1.0
+S.an_erase=true
+S.an_delay=0.4
+S.an_on=true
+S.an_show=true
+S.an_on_was=false
+S.an_glitch=0
+S.an_style=0
 
 local cpInputName=""
 
@@ -60,9 +69,34 @@ local P={
     {"Heavy (1500)",1500.0},
 }
 
+local GCH="!@#$%^&*()_+-=[]{}|;:,.<>/?~\\/"
+local DCH="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*"
+local GMODES={
+    {"Off",0},
+    {"Light (25%)",25},
+    {"Medium (50%)",50},
+    {"Heavy (75%)",75},
+    {"Always (100%)",100},
+}
+local STYLES={"Default","Decrypt"}
+
 local CFG="gravity_config.json"
 local CPCFG="gravity_custom.json"
 local cpCombo=nil
+local ATXT="Gravity Changer"
+local animText=""
+local animState="typing"
+local animIdx=0
+local animTimer=0
+local ATICK=0.02
+local CP_MAX=15
+
+local function glitchIdx()
+    for i,m in ipairs(GMODES) do
+        if m[2]==S.an_glitch then return i-1 end
+    end
+    return 0
+end
 
 local function detectPreset(v)
     for _,p in ipairs(P) do
@@ -80,9 +114,7 @@ local function roll()
     return math.floor(r*10+0.5)/10,lo,hi
 end
 
-local function esc(s)
-    return (s:gsub('\\','\\\\'):gsub('"','\\"'))
-end
+local function esc(s) return (s:gsub('\\','\\\\'):gsub('"','\\"')) end
 
 local function svCustom()
     local parts={}
@@ -103,22 +135,21 @@ local function ldCustom()
 end
 
 local function sv()
-    local d=string.format(
-        '{"gravity":%.2f,"autoApply":%s,'..
-        '"randomInterval":%.2f,"randomMin":%.2f,"randomMax":%.2f,'..
-        '"flipInterval":%.2f,'..
-        '"overlay":%s,"overlayX":%d,"overlayY":%d,'..
+    writefile(CFG,string.format(
+        '{"gravity":%.2f,"autoApply":%s,"randomInterval":%.2f,"randomMin":%.2f,"randomMax":%.2f,'..
+        '"flipInterval":%.2f,"overlay":%s,"overlayX":%d,"overlayY":%d,'..
         '"ovR":%d,"ovG":%d,"ovB":%d,"ovA":%.2f,"ovSize":%d,"ovFont":%d,'..
         '"bgOn":%s,"bgR":%d,"bgG":%d,"bgB":%d,"bgA":%.2f,'..
         '"rgbOn":%s,"rgbSpeed":%d,"rgbThick":%d,'..
+        '"animOn":%s,"animShow":%s,"animStyle":%d,"animGlitch":%d,'..
+        '"animSpeed":%.2f,"animHold":%.2f,"animErase":%s,"animDelay":%.2f,'..
         '"rndCount":%d,"flipCount":%d}',
-        S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,
-        S.gc_fi,tostring(oOn),oX,oY,
-        oR,oG,oB,oA,oSz,oFi,
-        tostring(oBgOn),oBgR,oBgG,oBgB,oBgA,
+        S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,S.gc_fi,tostring(oOn),oX,oY,
+        oR,oG,oB,oA,oSz,oFi,tostring(oBgOn),oBgR,oBgG,oBgB,oBgA,
         tostring(oRgbOn),oRgbSpeed,oRgbThick,
-        S.gc_rc,S.gc_fc)
-    writefile(CFG,d)
+        tostring(S.an_on),tostring(S.an_show),S.an_style,S.an_glitch,
+        S.an_speed,S.an_hold,tostring(S.an_erase),S.an_delay,
+        S.gc_rc,S.gc_fc))
 end
 
 local function ld()
@@ -150,8 +181,17 @@ local function ld()
     oRgbOn=bl("rgbOn")
     oRgbSpeed=nm("rgbSpeed") or oRgbSpeed
     oRgbThick=nm("rgbThick") or oRgbThick
+    S.an_on=bl("animOn")
+    S.an_show=bl("animShow")
+    S.an_style=nm("animStyle") or S.an_style
+    S.an_glitch=nm("animGlitch") or S.an_glitch
+    S.an_speed=nm("animSpeed") or S.an_speed
+    S.an_hold=nm("animHold") or S.an_hold
+    S.an_erase=bl("animErase")
+    S.an_delay=nm("animDelay") or S.an_delay
     S.gc_rc=nm("rndCount") or S.gc_rc
     S.gc_fc=nm("flipCount") or S.gc_fc
+    if S.an_style<0 or S.an_style>#STYLES-1 then S.an_style=0 end
     S.gc_rn=false
     S.gc_fn=false
     return true
@@ -175,6 +215,15 @@ local function setDefaults()
     S.gc_fi=2.0
     S.gc_rc=0
     S.gc_fc=0
+    S.an_speed=8
+    S.an_hold=1.0
+    S.an_erase=true
+    S.an_delay=0.4
+    S.an_on=true
+    S.an_show=true
+    S.an_on_was=false
+    S.an_style=0
+    S.an_glitch=0
     oOn=true
     oX,oY=20,20
     oR,oG,oB,oA=120,255,120,1
@@ -215,6 +264,15 @@ local function syncUI()
     UI.SetValue("grav_rgb_on",oRgbOn)
     UI.SetValue("grav_rgb_speed",oRgbSpeed)
     UI.SetValue("grav_rgb_thick",oRgbThick)
+    UI.SetValue("grav_an_on",S.an_on)
+    UI.SetValue("grav_an_show",S.an_show)
+    UI.SetValue("grav_an_style",S.an_style)
+    UI.SetValue("grav_an_speed",S.an_speed)
+    UI.SetValue("grav_an_hold",S.an_hold)
+    UI.SetValue("grav_an_delay",S.an_delay)
+    UI.SetValue("grav_an_erase",S.an_erase)
+    UI.SetValue("grav_an_glitch",glitchIdx())
+    UI.SetValue("grav_cp_name","")
     UI.SetValue("grav_preset",0)
     UI.SetValue("grav_cp_combo",0)
 end
@@ -242,7 +300,7 @@ rgbLine.Thickness=oRgbThick
 rgbLine.Corner=8
 rgbLine.Visible=false
 
-local N=3
+local N=4
 local ov={}
 for i=1,N do
     local t=Drawing.new("Text")
@@ -258,39 +316,133 @@ end
 
 local rgbHue=0
 
+local function renderDefault()
+    if S.an_glitch==0 then return ATXT:sub(1,animIdx) end
+    local out={}
+    for i=1,animIdx do
+        if i==animIdx and math.random(100)<=S.an_glitch then
+            local g=math.random(#GCH)
+            out[i]=GCH:sub(g,g)
+        else
+            out[i]=ATXT:sub(i,i)
+        end
+    end
+    return table.concat(out)
+end
+
+local function renderDecrypt()
+    local out={}
+    for i=1,#ATXT do
+        local c=ATXT:sub(i,i)
+        if c==" " then
+            out[i]=" "
+        elseif i<=animIdx then
+            out[i]=c
+        else
+            local p=math.random(#DCH)
+            out[i]=DCH:sub(p,p)
+        end
+    end
+    return table.concat(out)
+end
+
+local function renderAnim()
+    if S.an_style==1 then return renderDecrypt() end
+    return renderDefault()
+end
+
+task.spawn(function()
+    local last=tick()
+    while true do
+        local now=tick()
+        local dt=now-last
+        last=now
+        if S.an_on then
+            if animState=="typing" then
+                animTimer=animTimer+dt
+                local step=1/S.an_speed
+                while animTimer>=step and animIdx<#ATXT do
+                    animTimer=animTimer-step
+                    animIdx=animIdx+1
+                end
+                animText=renderAnim()
+                if animIdx>=#ATXT then
+                    animState="holding"
+                    animTimer=0
+                    animText=ATXT
+                end
+            elseif animState=="holding" then
+                animTimer=animTimer+dt
+                if animTimer>=S.an_hold then
+                    animState=S.an_erase and "erasing" or "delaying"
+                    animTimer=0
+                    if not S.an_erase then
+                        animText=(S.an_style==1) and renderDecrypt() or ATXT
+                    end
+                end
+            elseif animState=="erasing" then
+                animTimer=animTimer+dt
+                local step=1/S.an_speed
+                while animTimer>=step and animIdx>0 do
+                    animTimer=animTimer-step
+                    animIdx=animIdx-1
+                end
+                if S.an_style==1 then
+                    animText=renderDecrypt()
+                else
+                    animText=ATXT:sub(1,animIdx)
+                end
+                if animIdx<=0 then
+                    animState="delaying"
+                    animTimer=0
+                    if S.an_style==1 then animText=renderDecrypt() end
+                end
+            elseif animState=="delaying" then
+                animTimer=animTimer+dt
+                if animTimer>=S.an_delay then
+                    animState="typing"
+                    animTimer=0
+                    animIdx=0
+                    animText=""
+                end
+            end
+        else
+            animText=ATXT
+        end
+        wait(ATICK)
+    end
+end)
+
 task.spawn(function()
     while true do
         if oOn then
             local cur=rg() or 0
             local lh=oSz+4
-            local rnd = S.gc_rn or S.gc_rc>0
-            local flp = S.gc_fn or S.gc_fc>0
-            local counter = nil
+            local rnd=S.gc_rn or S.gc_rc>0
+            local flp=S.gc_fn or S.gc_fc>0
+            local counter=nil
             if rnd and flp then counter=string.format("RND:%d  FLIP:%d",S.gc_rc,S.gc_fc)
             elseif rnd then counter=string.format("RND:%d",S.gc_rc)
             elseif flp then counter=string.format("FLIP:%d",S.gc_fc) end
-
             local txt={
+                S.an_show and animText or nil,
                 string.format("Gravity: %.1f",cur),
                 string.format("Preset:  %s",detectPreset(cur)),
                 counter,
             }
-
             local maxLen=0
-            local visibleCount=0
+            local vc=0
             for i=1,N do
                 if txt[i] then
                     if #txt[i]>maxLen then maxLen=#txt[i] end
-                    visibleCount=visibleCount+1
+                    vc=vc+1
                 end
             end
-
             local padX=math.floor(oSz*0.6)
             local padY=math.floor(oSz*0.4)
             local w=maxLen*oSz*0.6+padX*2
-            local h=(visibleCount-1)*lh+oSz+padY*2
-
-            if oBgOn and visibleCount>0 then
+            local h=(vc-1)*lh+oSz+padY*2
+            if oBgOn and vc>0 then
                 bg.Position=Vector2.new(oX,oY)
                 bg.Size=Vector2.new(w,h)
                 bg.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
@@ -299,20 +451,18 @@ task.spawn(function()
             else
                 bg.Visible=false
             end
-
-            if oRgbOn and oBgOn and visibleCount>0 then
+            if oRgbOn and oBgOn and vc>0 then
                 rgbHue=(rgbHue+oRgbSpeed*0.03)%360
-                local c=Color3.fromHSV(rgbHue/360,1,1)
                 rgbLine.Position=Vector2.new(oX,oY)
                 rgbLine.Size=Vector2.new(w,h)
-                rgbLine.Color=c
+                rgbLine.Color=Color3.fromHSV(rgbHue/360,1,1)
                 rgbLine.Transparency=1
                 rgbLine.Thickness=oRgbThick
                 rgbLine.Visible=true
                 bgLine.Visible=false
             else
                 rgbLine.Visible=false
-                if oBgOn and visibleCount>0 then
+                if oBgOn and vc>0 then
                     bgLine.Position=Vector2.new(oX,oY)
                     bgLine.Size=Vector2.new(w,h)
                     bgLine.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
@@ -322,12 +472,13 @@ task.spawn(function()
                     bgLine.Visible=false
                 end
             end
-
+            local li=0
             for i=1,N do
                 local t=ov[i]
                 if txt[i] then
+                    li=li+1
                     t.Text=txt[i]
-                    t.Position=Vector2.new(oX+padX,oY+padY+(i-1)*lh)
+                    t.Position=Vector2.new(oX+padX,oY+padY+(li-1)*lh)
                     t.Size=oSz
                     t.Color=Color3.fromRGB(oR,oG,oB)
                     t.Transparency=oA
@@ -397,9 +548,7 @@ UI.AddTab("Gravity Changer+",function(tab)
         S.gc_aa=v
         if v then sg(S.gc_t); S.gc_la=S.gc_t else S.gc_la=nil end
     end)
-    L:Button("Apply Now",100,20,function()
-        sg(S.gc_t); S.gc_la=S.gc_t
-    end)
+    L:Button("Apply Now",100,20,function() sg(S.gc_t); S.gc_la=S.gc_t end)
     L:Button("Reset Gravity",100,20,function()
         ap(196.2)
         UI.SetValue("grav_preset",1)
@@ -421,7 +570,7 @@ UI.AddTab("Gravity Changer+",function(tab)
 
     local CP=tab:Section("Custom Presets","Left")
     CP:InputText("grav_cp_name","Name","",function(t)
-        cpInputName=t
+        cpInputName=t:sub(1,CP_MAX)
     end)
     CP:Button("Add Preset",100,20,function()
         if cpInputName=="" then
@@ -498,6 +647,44 @@ UI.AddTab("Gravity Changer+",function(tab)
         sv()
         notify("Stats reset","Gravity Changer+",1.5)
     end)
+    O:Spacing()
+    O:Text("Animation")
+    O:Toggle("grav_an_show","Show Title",S.an_show,function(v)
+        if not v then
+            S.an_on_was=S.an_on
+            S.an_on=false
+            UI.SetValue("grav_an_on",false)
+        else
+            if S.an_on_was then
+                S.an_on=true
+                UI.SetValue("grav_an_on",true)
+            end
+        end
+        S.an_show=v
+    end)
+    O:Toggle("grav_an_on","Enable Animation",S.an_on,function(v)
+        S.an_on=v
+        if not v then
+            animText=ATXT
+            animState="typing"
+            animIdx=0
+            animTimer=0
+        end
+    end)
+    O:Combo("grav_an_style","Style",STYLES,S.an_style,function(i)
+        S.an_style=i
+        animState="typing"
+        animIdx=0
+        animTimer=0
+        animText=renderAnim()
+    end)
+    local gm={}
+    for _,m in ipairs(GMODES) do table.insert(gm,m[1]) end
+    O:Combo("grav_an_glitch","Glitch Mode",gm,glitchIdx(),function(i) S.an_glitch=GMODES[i+1][2] end)
+    O:SliderFloat("grav_an_speed","Speed (chars/s)",1.0,10.0,S.an_speed,"%.1f",function(v) S.an_speed=v end)
+    O:SliderFloat("grav_an_hold","Hold (s)",0.0,5.0,S.an_hold,"%.1f",function(v) S.an_hold=v end)
+    O:SliderFloat("grav_an_delay","Delay (s)",0.0,5.0,S.an_delay,"%.1f",function(v) S.an_delay=v end)
+    O:Toggle("grav_an_erase","Erase Animation",S.an_erase,function(v) S.an_erase=v end)
 
     local R=tab:Section("Random Gravity","Right")
     R:Toggle("grav_random","Enable Random",false,function(v) S.gc_rn=v end)
@@ -529,6 +716,8 @@ UI.AddTab("Gravity Changer+",function(tab)
     C:Button("Save",100,20,function()
         sv()
         svCustom()
+        UI.SetValue("grav_cp_name","")
+        cpInputName=""
         print("[Gravity] Saved")
     end)
     C:Button("Load",100,20,function()
@@ -537,6 +726,7 @@ UI.AddTab("Gravity Changer+",function(tab)
             syncUI()
             rebuildCpCombo()
             sg(S.gc_t); S.gc_la=S.gc_t
+            cpInputName=""
             notify("Config loaded","Gravity Changer+",1.5)
         end
     end)
@@ -544,6 +734,7 @@ UI.AddTab("Gravity Changer+",function(tab)
         setDefaults()
         syncUI()
         sg(S.gc_t); S.gc_la=S.gc_t
+        cpInputName=""
         notify("Reset to defaults","Gravity Changer+",1.5)
     end)
     C:Button("Delete Config",100,20,function()
@@ -551,11 +742,10 @@ UI.AddTab("Gravity Changer+",function(tab)
         setDefaults()
         syncUI()
         sg(S.gc_t); S.gc_la=S.gc_t
+        cpInputName=""
         notify("Config deleted (custom presets kept)","Gravity Changer+",1.5)
     end)
 
-    if loaded then
-        syncUI()
-    end
+    if loaded then syncUI() end
     rebuildCpCombo()
 end)
