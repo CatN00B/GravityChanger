@@ -1,11 +1,49 @@
+local HttpService=game:GetService("HttpService")
+
+local WORLD_OFF=0x400
+local GRAV_OFF=0x22c
+
+local function fetchRemote()
+    local ok,ver=pcall(function()
+        return game:HttpGet("https://offsets.imtheo.lol/roblox/version")
+    end)
+    if not ok or not ver or ver=="" then return nil end
+    ver=ver:gsub("%s+","")
+    local url="https://offsets.imtheo.lol/"..ver.."/offsets.json"
+    local ok2,raw=pcall(function()
+        return game:HttpGet(url)
+    end)
+    if not ok2 or not raw or raw=="" then return nil end
+    local ok3,data=pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if not ok3 or not data then return nil end
+    local offs=data.Offsets
+    if not offs or not offs.Workspace or not offs.World then return nil end
+    local w=offs.Workspace.World
+    local g=offs.World.Gravity
+    if not w or not g then return nil end
+    return w,g
+end
+
+local function resolveOffsets()
+    local rw,rg=fetchRemote()
+    if rw and rg then
+        WORLD_OFF=rw
+        GRAV_OFF=rg
+        return true
+    end
+    return false
+end
+
 local function sg(g)
-    local p=memory_read("uintptr_t",workspace.Address+0x400)
-    memory_write("float",p+0x22c,g)
+    local p=memory_read("uintptr_t",workspace.Address+WORLD_OFF)
+    memory_write("float",p+GRAV_OFF,g)
 end
 
 local function rg()
-    local p=memory_read("uintptr_t",workspace.Address+0x400)
-    return memory_read("float",p+0x22c)
+    local p=memory_read("uintptr_t",workspace.Address+WORLD_OFF)
+    return memory_read("float",p+GRAV_OFF)
 end
 
 local S=_G
@@ -18,6 +56,8 @@ S.gc_rmin=-200.0
 S.gc_rmax=1500.0
 S.gc_fn=false
 S.gc_fi=2.0
+S.gc_fni=1.0
+S.gc_fst=0
 S.gc_rc=0
 S.gc_fc=0
 S.gc_cp={}
@@ -121,7 +161,7 @@ local function svCustom()
     for _,p in ipairs(S.gc_cp) do
         table.insert(parts,string.format('{"name":"%s","value":%.2f}',esc(p.name),p.value))
     end
-    writefile(CPCFG,"["..table.concat(parts,",").."]")
+    pcall(writefile,CPCFG,"["..table.concat(parts,",").."]")
 end
 
 local function ldCustom()
@@ -135,16 +175,16 @@ local function ldCustom()
 end
 
 local function sv()
-    writefile(CFG,string.format(
+    pcall(writefile,CFG,string.format(
         '{"gravity":%.2f,"autoApply":%s,"randomInterval":%.2f,"randomMin":%.2f,"randomMax":%.2f,'..
-        '"flipInterval":%.2f,"overlay":%s,"overlayX":%d,"overlayY":%d,'..
+        '"flipInterval":%.2f,"flipNormalInterval":%.2f,"overlay":%s,"overlayX":%d,"overlayY":%d,'..
         '"ovR":%d,"ovG":%d,"ovB":%d,"ovA":%.2f,"ovSize":%d,"ovFont":%d,'..
         '"bgOn":%s,"bgR":%d,"bgG":%d,"bgB":%d,"bgA":%.2f,'..
         '"rgbOn":%s,"rgbSpeed":%d,"rgbThick":%d,'..
         '"animOn":%s,"animShow":%s,"animStyle":%d,"animGlitch":%d,'..
         '"animSpeed":%.2f,"animHold":%.2f,"animErase":%s,"animDelay":%.2f,'..
         '"rndCount":%d,"flipCount":%d}',
-        S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,S.gc_fi,tostring(oOn),oX,oY,
+        S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,S.gc_fi,S.gc_fni,tostring(oOn),oX,oY,
         oR,oG,oB,oA,oSz,oFi,tostring(oBgOn),oBgR,oBgG,oBgB,oBgA,
         tostring(oRgbOn),oRgbSpeed,oRgbThick,
         tostring(S.an_on),tostring(S.an_show),S.an_style,S.an_glitch,
@@ -164,6 +204,7 @@ local function ld()
     S.gc_rmin=nm("randomMin") or S.gc_rmin
     S.gc_rmax=nm("randomMax") or S.gc_rmax
     S.gc_fi=nm("flipInterval") or S.gc_fi
+    S.gc_fni=nm("flipNormalInterval") or S.gc_fni
     oOn=bl("overlay")
     oX=nm("overlayX") or oX
     oY=nm("overlayY") or oY
@@ -194,6 +235,7 @@ local function ld()
     if S.an_style<0 or S.an_style>#STYLES-1 then S.an_style=0 end
     S.gc_rn=false
     S.gc_fn=false
+    S.gc_fst=0
     return true
 end
 
@@ -213,6 +255,8 @@ local function setDefaults()
     S.gc_rmax=1500.0
     S.gc_fn=false
     S.gc_fi=2.0
+    S.gc_fni=1.0
+    S.gc_fst=0
     S.gc_rc=0
     S.gc_fc=0
     S.an_speed=8
@@ -243,7 +287,6 @@ local function rebuildCpCombo()
     cpCombo:Clear()
     cpCombo:Add("None")
     for _,p in ipairs(S.gc_cp) do cpCombo:Add(p.name) end
-    UI.SetValue("grav_cp_combo",0)
 end
 
 local function syncUI()
@@ -255,6 +298,7 @@ local function syncUI()
     UI.SetValue("grav_random_int",S.gc_ri)
     UI.SetValue("grav_flip",false)
     UI.SetValue("grav_flip_int",S.gc_fi)
+    UI.SetValue("grav_flip_nint",S.gc_fni)
     UI.SetValue("grav_overlay",oOn)
     UI.SetValue("grav_ov_font",oFi-1)
     UI.SetValue("grav_ov_size",oSz)
@@ -517,24 +561,46 @@ task.spawn(function()
             sv()
             UI.SetValue("grav_preset",0)
             notify(string.format("Random: %.1f  [%.0f ... %.0f]",r,lo,hi),"Gravity Changer+",1)
+            wait(S.gc_ri)
+        else
+            wait(0.1)
         end
-        wait(S.gc_ri)
     end
 end)
 
 task.spawn(function()
     while true do
         if S.gc_fn then
-            ap(-S.gc_t)
-            S.gc_fc=S.gc_fc+1
-            sv()
-            UI.SetValue("grav_preset",0)
+            if S.gc_fst==0 then
+                ap(-math.abs(S.gc_t))
+                S.gc_fc=S.gc_fc+1
+                S.gc_fst=1
+                sv()
+                UI.SetValue("grav_preset",0)
+                wait(S.gc_fi)
+            else
+                ap(math.abs(S.gc_t))
+                S.gc_fst=0
+                sv()
+                UI.SetValue("grav_preset",0)
+                wait(S.gc_fni)
+            end
+        else
+            S.gc_fst=0
+            wait(0.1)
         end
-        wait(S.gc_fi)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        wait(30)
+        resolveOffsets()
     end
 end)
 
 ldCustom()
+resolveOffsets()
 local loaded=ld()
 
 UI.AddTab("Gravity Changer+",function(tab)
@@ -564,7 +630,6 @@ UI.AddTab("Gravity Changer+",function(tab)
     L:Combo("grav_preset","Preset",items,0,function(i)
         if i==0 then return end
         ap(P[i][2])
-        UI.SetValue("grav_preset",i)
         notify(string.format("%s -> %.1f",P[i][1],S.gc_t),"Gravity Changer+",1.5)
     end)
 
@@ -705,11 +770,12 @@ UI.AddTab("Gravity Changer+",function(tab)
     end)
 
     local F=tab:Section("Flip Gravity","Right")
-    F:Toggle("grav_flip","Enable Flip",false,function(v) S.gc_fn=v end)
-    F:SliderFloat("grav_flip_int","Interval (s)",0.2,10.0,S.gc_fi,"%.1f",function(v) S.gc_fi=v end)
+    F:Toggle("grav_flip","Enable Flip",false,function(v) S.gc_fn=v; S.gc_fst=0 end)
+    F:SliderFloat("grav_flip_int","Inverted Gravity Time (sec)",0.2,10.0,S.gc_fi,"%.1f",function(v) S.gc_fi=v end)
+    F:SliderFloat("grav_flip_nint","Normal Gravity Time (sec)",0.2,10.0,S.gc_fni,"%.1f",function(v) S.gc_fni=v end)
     F:Spacing()
-    F:Text("Inverts gravity every N seconds")
-    F:Text("196.2 -> -196.2 -> 196.2 ...")
+    F:Text("How long each gravity state is held")
+    F:Text("before switching to the other one")
 
     local C=tab:Section("Config","Right")
     C:Text("Save / Load")
@@ -718,13 +784,12 @@ UI.AddTab("Gravity Changer+",function(tab)
         svCustom()
         UI.SetValue("grav_cp_name","")
         cpInputName=""
-        print("[Gravity] Saved")
     end)
     C:Button("Load",100,20,function()
         ldCustom()
         if ld() then
-            syncUI()
             rebuildCpCombo()
+            syncUI()
             sg(S.gc_t); S.gc_la=S.gc_t
             cpInputName=""
             notify("Config loaded","Gravity Changer+",1.5)
@@ -746,6 +811,9 @@ UI.AddTab("Gravity Changer+",function(tab)
         notify("Config deleted (custom presets kept)","Gravity Changer+",1.5)
     end)
 
-    if loaded then syncUI() end
-    rebuildCpCombo()
+    if loaded then
+        rebuildCpCombo()
+        syncUI()
+        loaded=false
+    end
 end)
