@@ -1,7 +1,7 @@
 local HttpService=game:GetService("HttpService")
 
-local WORLD_OFF=0x400
-local GRAV_OFF=0x22c
+local WORLD_OFF=nil
+local GRAV_OFF=nil
 
 local function fetchRemote()
     local ok,ver=pcall(function()
@@ -37,13 +37,21 @@ local function resolveOffsets()
 end
 
 local function sg(g)
-    local p=memory_read("uintptr_t",workspace.Address+WORLD_OFF)
-    memory_write("float",p+GRAV_OFF,g)
+    if not WORLD_OFF or not GRAV_OFF then return end
+    local ok,p=pcall(memory_read,"uintptr_t",workspace.Address+WORLD_OFF)
+    if not ok or not p or p==0 then return end
+    pcall(memory_write,"float",p+GRAV_OFF,g)
+    pcall(memory_write,"float",p+GRAV_OFF-4,g)
 end
 
 local function rg()
-    local p=memory_read("uintptr_t",workspace.Address+WORLD_OFF)
-    return memory_read("float",p+GRAV_OFF)
+    if not WORLD_OFF or not GRAV_OFF then return nil end
+    local ok,p=pcall(memory_read,"uintptr_t",workspace.Address+WORLD_OFF)
+    if not ok or not p or p==0 then return nil end
+    local ok2,v=pcall(memory_read,"float",p+GRAV_OFF)
+    if not ok2 or not v then return nil end
+    if v~=v then return nil end
+    return v
 end
 
 local S=_G
@@ -595,7 +603,12 @@ end)
 task.spawn(function()
     while true do
         wait(30)
-        resolveOffsets()
+        if not WORLD_OFF or not GRAV_OFF then
+            resolveOffsets()
+        else
+            local v=rg()
+            if v==nil or v~=v then resolveOffsets() end
+        end
     end
 end)
 
