@@ -139,6 +139,13 @@ local animTimer=0
 local ATICK=0.02
 local CP_MAX=15
 
+local kbFlip=nil
+local kbRnd=nil
+local kbReset=nil
+local kbInvert=nil
+local kbCustom=nil
+local kbPrev={}
+
 local function glitchIdx()
     for i,m in ipairs(GMODES) do
         if m[2]==S.an_glitch then return i-1 end
@@ -403,6 +410,67 @@ local function renderAnim()
     return renderDefault()
 end
 
+local function kbPressed(id,kb)
+    if not kb then return false end
+    local ok,v=pcall(function() return kb:IsEnabled() end)
+    v=ok and v==true
+    local was=kbPrev[id]==true
+    kbPrev[id]=v
+    return v and not was
+end
+
+local function bindFlip()
+    local v=not S.gc_fn
+    S.gc_fn=v
+    S.gc_fst=0
+    UI.SetValue("grav_flip",v)
+    notify(v and "Flip: ON" or "Flip: OFF","Gravity Changer+",1.5)
+end
+
+local function bindRandom()
+    local v=not S.gc_rn
+    S.gc_rn=v
+    UI.SetValue("grav_random",v)
+    notify(v and "Random: ON" or "Random: OFF","Gravity Changer+",1.5)
+end
+
+local function bindReset()
+    ap(196.2)
+    UI.SetValue("grav_preset",1)
+    notify("Reset gravity to default","Gravity Changer+",1.5)
+end
+
+local function bindInvert()
+    ap(-S.gc_t)
+    UI.SetValue("grav_preset",0)
+    notify(string.format("Inverted: %.1f",S.gc_t),"Gravity Changer+",1.5)
+end
+
+local function bindCustom()
+    local i=UI.GetValue("grav_cp_combo")
+    if type(i)~="number" or i<=0 or not S.gc_cp[i] then
+        error("Custom gravity: no custom preset selected")
+        return
+    end
+    ap(S.gc_cp[i].value)
+    UI.SetValue("grav_preset",0)
+    notify(string.format("%s -> %.1f",S.gc_cp[i].name,S.gc_t),"Gravity Changer+",1.5)
+end
+
+task.spawn(function()
+    while true do
+        if kbPressed("flip",kbFlip) then pcall(bindFlip) end
+        if kbPressed("rnd",kbRnd) then pcall(bindRandom) end
+        if kbPressed("reset",kbReset) and UI.GetValue("grav_bind_reset") then pcall(bindReset) end
+        if kbPressed("invert",kbInvert) and UI.GetValue("grav_bind_invert") then pcall(bindInvert) end
+        if kbPressed("custom",kbCustom) and UI.GetValue("grav_bind_custom") then
+            local ok,e=pcall(bindCustom)
+            if not ok then error(tostring(e)) end
+        end
+        wait(0.02)
+    end
+end)
+
 task.spawn(function()
     local last=tick()
     while true do
@@ -633,11 +701,15 @@ UI.AddTab("Gravity Changer+",function(tab)
         UI.SetValue("grav_preset",1)
         notify("Reset gravity to default","Gravity Changer+",1.5)
     end)
+    L:Toggle("grav_bind_reset","Reset Bind",true)
+    kbReset=L:Keybind("grav_kb_reset",0,"click")
     L:Button("Invert Gravity",100,20,function()
         ap(-S.gc_t)
         UI.SetValue("grav_preset",0)
         notify(string.format("Inverted: %.1f",S.gc_t),"Gravity Changer+",1.5)
     end)
+    L:Toggle("grav_bind_invert","Invert Bind",true)
+    kbInvert=L:Keybind("grav_kb_invert",0,"click")
     local items={"Manual"}
     for _,p in ipairs(P) do table.insert(items,p[1]) end
     L:Combo("grav_preset","Preset",items,0,function(i)
@@ -670,6 +742,8 @@ UI.AddTab("Gravity Changer+",function(tab)
         ap(S.gc_cp[i].value)
         notify(string.format("%s -> %.1f",S.gc_cp[i].name,S.gc_t),"Gravity Changer+",1.5)
     end)
+    CP:Toggle("grav_bind_custom","Custom Bind",true)
+    kbCustom=CP:Keybind("grav_kb_custom",0,"click")
     CP:Button("Delete Selected",100,20,function()
         local i=UI.GetValue("grav_cp_combo")
         if not i or i==0 then
@@ -766,6 +840,7 @@ UI.AddTab("Gravity Changer+",function(tab)
 
     local R=tab:Section("Random Gravity","Right")
     R:Toggle("grav_random","Enable Random",false,function(v) S.gc_rn=v end)
+    kbRnd=R:Keybind("grav_kb_random",0,"click")
     R:SliderFloat("grav_rand_min","Min",-2000,2000,S.gc_rmin,"%.0f",function(v)
         S.gc_rmin=v
         if S.gc_rmin>S.gc_rmax then S.gc_rmax=S.gc_rmin; UI.SetValue("grav_rand_max",S.gc_rmax) end
@@ -784,6 +859,7 @@ UI.AddTab("Gravity Changer+",function(tab)
 
     local F=tab:Section("Flip Gravity","Right")
     F:Toggle("grav_flip","Enable Flip",false,function(v) S.gc_fn=v; S.gc_fst=0 end)
+    kbFlip=F:Keybind("grav_kb_flip",0,"click")
     F:SliderFloat("grav_flip_int","Inverted Gravity Time (sec)",0.2,10.0,S.gc_fi,"%.1f",function(v) S.gc_fi=v end)
     F:SliderFloat("grav_flip_nint","Normal Gravity Time (sec)",0.2,10.0,S.gc_fni,"%.1f",function(v) S.gc_fni=v end)
     F:Spacing()
