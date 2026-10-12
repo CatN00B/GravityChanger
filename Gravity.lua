@@ -69,15 +69,6 @@ S.gc_fst=0
 S.gc_rc=0
 S.gc_fc=0
 S.gc_cp={}
-S.an_speed=8
-S.an_hold=1.0
-S.an_erase=true
-S.an_delay=0.4
-S.an_on=true
-S.an_show=true
-S.an_on_was=false
-S.an_glitch=0
-S.an_style=0
 
 local cpInputName=""
 
@@ -89,10 +80,6 @@ local oFi=5
 local oBgOn=true
 local oBgR,oBgG,oBgB=15,15,20
 local oBgA=0.55
-local oRgbOn=false
-local oRgbSpeed=60
-local oRgbThick=2
-local oRgbWasOn=false
 
 local FONTS={
     {"UI",Drawing.Fonts.UI},
@@ -117,26 +104,10 @@ local P={
     {"Heavy (1500)",1500.0},
 }
 
-local GCH="!@#$%^&*()_+-=[]{}|;:,.<>/?~\\/"
-local DCH="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*"
-local GMODES={
-    {"Off",0},
-    {"Light (25%)",25},
-    {"Medium (50%)",50},
-    {"Heavy (75%)",75},
-    {"Always (100%)",100},
-}
-local STYLES={"Default","Decrypt"}
-
 local CFG="gravity_config.json"
 local CPCFG="gravity_custom.json"
 local cpCombo=nil
 local ATXT="Gravity Changer"
-local animText=""
-local animState="typing"
-local animIdx=0
-local animTimer=0
-local ATICK=0.02
 local CP_MAX=15
 
 local KB = { flip=nil, rnd=nil, reset=nil, invert=nil, custom=nil }
@@ -153,13 +124,6 @@ local function kbPressed(id,kb)
     local was=KPrev[id]
     KPrev[id]=h
     return h and not was
-end
-
-local function glitchIdx()
-    for i,m in ipairs(GMODES) do
-        if m[2]==S.an_glitch then return i-1 end
-    end
-    return 0
 end
 
 local function detectPreset(v)
@@ -199,20 +163,21 @@ local function ldCustom()
 end
 
 local function sv()
+    local kbr = tonumber(UI.GetValue("grav_kb_reset")) or 0
+    local kbi = tonumber(UI.GetValue("grav_kb_invert")) or 0
+    local kbc = tonumber(UI.GetValue("grav_kb_custom")) or 0
+    local kbrn = tonumber(UI.GetValue("grav_kb_random")) or 0
+    local kbf = tonumber(UI.GetValue("grav_kb_flip")) or 0
     pcall(writefile,CFG,string.format(
         '{"gravity":%.2f,"autoApply":%s,"randomInterval":%.2f,"randomMin":%.2f,"randomMax":%.2f,'..
         '"flipInterval":%.2f,"flipNormalInterval":%.2f,"overlay":%s,"overlayX":%d,"overlayY":%d,'..
         '"ovR":%d,"ovG":%d,"ovB":%d,"ovA":%.2f,"ovSize":%d,"ovFont":%d,'..
         '"bgOn":%s,"bgR":%d,"bgG":%d,"bgB":%d,"bgA":%.2f,'..
-        '"rgbOn":%s,"rgbSpeed":%d,"rgbThick":%d,'..
-        '"animOn":%s,"animShow":%s,"animStyle":%d,"animGlitch":%d,'..
-        '"animSpeed":%.2f,"animHold":%.2f,"animErase":%s,"animDelay":%.2f,'..
+        '"kbReset":%d,"kbInvert":%d,"kbCustom":%d,"kbRandom":%d,"kbFlip":%d,'..
         '"rndCount":%d,"flipCount":%d}',
         S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,S.gc_fi,S.gc_fni,tostring(oOn),oX,oY,
         oR,oG,oB,oA,oSz,oFi,tostring(oBgOn),oBgR,oBgG,oBgB,oBgA,
-        tostring(oRgbOn),oRgbSpeed,oRgbThick,
-        tostring(S.an_on),tostring(S.an_show),S.an_style,S.an_glitch,
-        S.an_speed,S.an_hold,tostring(S.an_erase),S.an_delay,
+        kbr,kbi,kbc,kbrn,kbf,
         S.gc_rc,S.gc_fc))
 end
 
@@ -243,23 +208,21 @@ local function ld()
     oBgG=nm("bgG") or oBgG
     oBgB=nm("bgB") or oBgB
     oBgA=nm("bgA") or oBgA
-    oRgbOn=bl("rgbOn")
-    oRgbSpeed=nm("rgbSpeed") or oRgbSpeed
-    oRgbThick=nm("rgbThick") or oRgbThick
-    S.an_on=bl("animOn")
-    S.an_show=bl("animShow")
-    S.an_style=nm("animStyle") or S.an_style
-    S.an_glitch=nm("animGlitch") or S.an_glitch
-    S.an_speed=nm("animSpeed") or S.an_speed
-    S.an_hold=nm("animHold") or S.an_hold
-    S.an_erase=bl("animErase")
-    S.an_delay=nm("animDelay") or S.an_delay
     S.gc_rc=nm("rndCount") or S.gc_rc
     S.gc_fc=nm("flipCount") or S.gc_fc
-    if S.an_style<0 or S.an_style>#STYLES-1 then S.an_style=0 end
     S.gc_rn=false
     S.gc_fn=false
     S.gc_fst=0
+    local kr=nm("kbReset")
+    local ki=nm("kbInvert")
+    local kc=nm("kbCustom")
+    local krn=nm("kbRandom")
+    local kf=nm("kbFlip")
+    if kr then UI.SetValue("grav_kb_reset",kr) end
+    if ki then UI.SetValue("grav_kb_invert",ki) end
+    if kc then UI.SetValue("grav_kb_custom",kc) end
+    if krn then UI.SetValue("grav_kb_random",krn) end
+    if kf then UI.SetValue("grav_kb_flip",kf) end
     return true
 end
 
@@ -283,15 +246,6 @@ local function setDefaults()
     S.gc_fst=0
     S.gc_rc=0
     S.gc_fc=0
-    S.an_speed=8
-    S.an_hold=1.0
-    S.an_erase=true
-    S.an_delay=0.4
-    S.an_on=true
-    S.an_show=true
-    S.an_on_was=false
-    S.an_style=0
-    S.an_glitch=0
     oOn=true
     oX,oY=20,20
     oR,oG,oB,oA=120,255,120,1
@@ -300,10 +254,6 @@ local function setDefaults()
     oBgOn=true
     oBgR,oBgG,oBgB=15,15,20
     oBgA=0.55
-    oRgbOn=false
-    oRgbSpeed=60
-    oRgbThick=2
-    oRgbWasOn=false
 end
 
 local function rebuildCpCombo()
@@ -329,17 +279,6 @@ local function syncUI()
     UI.SetValue("grav_ov_x",oX)
     UI.SetValue("grav_ov_y",oY)
     UI.SetValue("grav_bg_on",oBgOn)
-    UI.SetValue("grav_rgb_on",oRgbOn)
-    UI.SetValue("grav_rgb_speed",oRgbSpeed)
-    UI.SetValue("grav_rgb_thick",oRgbThick)
-    UI.SetValue("grav_an_on",S.an_on)
-    UI.SetValue("grav_an_show",S.an_show)
-    UI.SetValue("grav_an_style",S.an_style)
-    UI.SetValue("grav_an_speed",S.an_speed)
-    UI.SetValue("grav_an_hold",S.an_hold)
-    UI.SetValue("grav_an_delay",S.an_delay)
-    UI.SetValue("grav_an_erase",S.an_erase)
-    UI.SetValue("grav_an_glitch",glitchIdx())
     UI.SetValue("grav_cp_name","")
     UI.SetValue("grav_preset",0)
     UI.SetValue("grav_cp_combo",0)
@@ -360,15 +299,7 @@ bgLine.Thickness=1
 bgLine.Corner=8
 bgLine.Visible=false
 
-local rgbLine=Drawing.new("Square")
-rgbLine.Filled=false
-rgbLine.Color=Color3.fromRGB(255,0,0)
-rgbLine.Transparency=1
-rgbLine.Thickness=oRgbThick
-rgbLine.Corner=8
-rgbLine.Visible=false
-
-local N=4
+local N=3
 local ov={}
 for i=1,N do
     local t=Drawing.new("Text")
@@ -380,43 +311,6 @@ for i=1,N do
     t.Font=FONTS[oFi][2]
     t.Visible=false
     ov[i]=t
-end
-
-local rgbHue=0
-
-local function renderDefault()
-    if S.an_glitch==0 then return ATXT:sub(1,animIdx) end
-    local out={}
-    for i=1,animIdx do
-        if i==animIdx and math.random(100)<=S.an_glitch then
-            local g=math.random(#GCH)
-            out[i]=GCH:sub(g,g)
-        else
-            out[i]=ATXT:sub(i,i)
-        end
-    end
-    return table.concat(out)
-end
-
-local function renderDecrypt()
-    local out={}
-    for i=1,#ATXT do
-        local c=ATXT:sub(i,i)
-        if c==" " then
-            out[i]=" "
-        elseif i<=animIdx then
-            out[i]=c
-        else
-            local p=math.random(#DCH)
-            out[i]=DCH:sub(p,p)
-        end
-    end
-    return table.concat(out)
-end
-
-local function renderAnim()
-    if S.an_style==1 then return renderDecrypt() end
-    return renderDefault()
 end
 
 local function bindFlip()
@@ -467,68 +361,6 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    local last=tick()
-    while true do
-        local now=tick()
-        local dt=now-last
-        last=now
-        if S.an_on then
-            if animState=="typing" then
-                animTimer=animTimer+dt
-                local step=1/S.an_speed
-                while animTimer>=step and animIdx<#ATXT do
-                    animTimer=animTimer-step
-                    animIdx=animIdx+1
-                end
-                animText=renderAnim()
-                if animIdx>=#ATXT then
-                    animState="holding"
-                    animTimer=0
-                    animText=ATXT
-                end
-            elseif animState=="holding" then
-                animTimer=animTimer+dt
-                if animTimer>=S.an_hold then
-                    animState=S.an_erase and "erasing" or "delaying"
-                    animTimer=0
-                    if not S.an_erase then
-                        animText=(S.an_style==1) and renderDecrypt() or ATXT
-                    end
-                end
-            elseif animState=="erasing" then
-                animTimer=animTimer+dt
-                local step=1/S.an_speed
-                while animTimer>=step and animIdx>0 do
-                    animTimer=animTimer-step
-                    animIdx=animIdx-1
-                end
-                if S.an_style==1 then
-                    animText=renderDecrypt()
-                else
-                    animText=ATXT:sub(1,animIdx)
-                end
-                if animIdx<=0 then
-                    animState="delaying"
-                    animTimer=0
-                    if S.an_style==1 then animText=renderDecrypt() end
-                end
-            elseif animState=="delaying" then
-                animTimer=animTimer+dt
-                if animTimer>=S.an_delay then
-                    animState="typing"
-                    animTimer=0
-                    animIdx=0
-                    animText=""
-                end
-            end
-        else
-            animText=ATXT
-        end
-        wait(ATICK)
-    end
-end)
-
-task.spawn(function()
     while true do
         if oOn then
             local cur=rg() or 0
@@ -540,7 +372,7 @@ task.spawn(function()
             elseif rnd then counter=string.format("RND:%d",S.gc_rc)
             elseif flp then counter=string.format("FLIP:%d",S.gc_fc) end
             local txt={
-                S.an_show and animText or nil,
+                ATXT,
                 string.format("Gravity: %.1f",cur),
                 string.format("Preset:  %s",detectPreset(cur)),
                 counter,
@@ -566,27 +398,7 @@ task.spawn(function()
             else
                 bg.Visible=false
             end
-            if oRgbOn and oBgOn and vc>0 then
-                rgbHue=(rgbHue+oRgbSpeed*0.03)%360
-                rgbLine.Position=Vector2.new(oX,oY)
-                rgbLine.Size=Vector2.new(w,h)
-                rgbLine.Color=Color3.fromHSV(rgbHue/360,1,1)
-                rgbLine.Transparency=1
-                rgbLine.Thickness=oRgbThick
-                rgbLine.Visible=true
-                bgLine.Visible=false
-            else
-                rgbLine.Visible=false
-                if oBgOn and vc>0 then
-                    bgLine.Position=Vector2.new(oX,oY)
-                    bgLine.Size=Vector2.new(w,h)
-                    bgLine.Color=Color3.fromRGB(oBgR,oBgG,oBgB)
-                    bgLine.Transparency=math.min(oBgA+0.25,1)
-                    bgLine.Visible=true
-                else
-                    bgLine.Visible=false
-                end
-            end
+            bgLine.Visible=false
             local li=0
             for i=1,N do
                 local t=ov[i]
@@ -607,7 +419,6 @@ task.spawn(function()
             for i=1,N do ov[i].Visible=false end
             bg.Visible=false
             bgLine.Visible=false
-            rgbLine.Visible=false
         end
         wait(0.1)
     end
@@ -757,28 +568,13 @@ UI.AddTab("Gravity Changer+",function(tab)
         oB=math.floor(c.B*255+0.5)
         oA=a
     end)
-    O:Toggle("grav_bg_on","Show Background",oBgOn,function(v)
-        if not v then
-            oRgbWasOn=oRgbOn
-            oRgbOn=false
-            UI.SetValue("grav_rgb_on",false)
-        else
-            if oRgbWasOn then
-                oRgbOn=true
-                UI.SetValue("grav_rgb_on",true)
-            end
-        end
-        oBgOn=v
-    end)
+    O:Toggle("grav_bg_on","Show Background",oBgOn,function(v) oBgOn=v end)
     O:ColorPicker("grav_bg_col",oBgR/255,oBgG/255,oBgB/255,oBgA,function(c,a)
         oBgR=math.floor(c.R*255+0.5)
         oBgG=math.floor(c.G*255+0.5)
         oBgB=math.floor(c.B*255+0.5)
         oBgA=a
     end)
-    O:Toggle("grav_rgb_on","RGB Border",oRgbOn,function(v) oRgbOn=v end)
-    O:SliderInt("grav_rgb_speed","RGB Speed",5,200,oRgbSpeed,function(v) oRgbSpeed=v end)
-    O:SliderInt("grav_rgb_thick","RGB Width",1,6,oRgbThick,function(v) oRgbThick=v end)
     local fi={}
     for _,f in ipairs(FONTS) do table.insert(fi,f[1]) end
     O:Combo("grav_ov_font","Font",fi,oFi-1,function(i) oFi=i+1 end)
@@ -791,44 +587,6 @@ UI.AddTab("Gravity Changer+",function(tab)
         sv()
         notify("Stats reset","Gravity Changer+",1.5)
     end)
-    O:Spacing()
-    O:Text("Animation")
-    O:Toggle("grav_an_show","Show Title",S.an_show,function(v)
-        if not v then
-            S.an_on_was=S.an_on
-            S.an_on=false
-            UI.SetValue("grav_an_on",false)
-        else
-            if S.an_on_was then
-                S.an_on=true
-                UI.SetValue("grav_an_on",true)
-            end
-        end
-        S.an_show=v
-    end)
-    O:Toggle("grav_an_on","Enable Animation",S.an_on,function(v)
-        S.an_on=v
-        if not v then
-            animText=ATXT
-            animState="typing"
-            animIdx=0
-            animTimer=0
-        end
-    end)
-    O:Combo("grav_an_style","Style",STYLES,S.an_style,function(i)
-        S.an_style=i
-        animState="typing"
-        animIdx=0
-        animTimer=0
-        animText=renderAnim()
-    end)
-    local gm={}
-    for _,m in ipairs(GMODES) do table.insert(gm,m[1]) end
-    O:Combo("grav_an_glitch","Glitch Mode",gm,glitchIdx(),function(i) S.an_glitch=GMODES[i+1][2] end)
-    O:SliderFloat("grav_an_speed","Speed (chars/s)",1.0,10.0,S.an_speed,"%.1f",function(v) S.an_speed=v end)
-    O:SliderFloat("grav_an_hold","Hold (s)",0.0,5.0,S.an_hold,"%.1f",function(v) S.an_hold=v end)
-    O:SliderFloat("grav_an_delay","Delay (s)",0.0,5.0,S.an_delay,"%.1f",function(v) S.an_delay=v end)
-    O:Toggle("grav_an_erase","Erase Animation",S.an_erase,function(v) S.an_erase=v end)
 
     local R=tab:Section("Random Gravity","Right")
     R:Toggle("grav_random","Enable Random",false,function(v) S.gc_rn=v end)
