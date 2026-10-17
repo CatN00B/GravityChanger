@@ -56,8 +56,8 @@ end
 
 local S=_G
 S.gc_t=196.2
-S.gc_la=nil
 S.gc_aa=true
+S.gc_re=true
 S.gc_rn=false
 S.gc_ri=3.0
 S.gc_rmin=-200.0
@@ -66,6 +66,8 @@ S.gc_fn=false
 S.gc_fi=2.0
 S.gc_fni=1.0
 S.gc_fst=0
+S.gc_ftime=0
+S.gc_rtime=0
 S.gc_rc=0
 S.gc_fc=0
 S.gc_cp={}
@@ -169,13 +171,13 @@ local function sv()
     local kbrn = tonumber(UI.GetValue("grav_kb_random")) or 0
     local kbf = tonumber(UI.GetValue("grav_kb_flip")) or 0
     pcall(writefile,CFG,string.format(
-        '{"gravity":%.2f,"autoApply":%s,"randomInterval":%.2f,"randomMin":%.2f,"randomMax":%.2f,'..
+        '{"gravity":%.2f,"autoApply":%s,"reApply":%s,"randomInterval":%.2f,"randomMin":%.2f,"randomMax":%.2f,'..
         '"flipInterval":%.2f,"flipNormalInterval":%.2f,"overlay":%s,"overlayX":%d,"overlayY":%d,'..
         '"ovR":%d,"ovG":%d,"ovB":%d,"ovA":%.2f,"ovSize":%d,"ovFont":%d,'..
         '"bgOn":%s,"bgR":%d,"bgG":%d,"bgB":%d,"bgA":%.2f,'..
         '"kbReset":%d,"kbInvert":%d,"kbCustom":%d,"kbRandom":%d,"kbFlip":%d,'..
         '"rndCount":%d,"flipCount":%d}',
-        S.gc_t,tostring(S.gc_aa),S.gc_ri,S.gc_rmin,S.gc_rmax,S.gc_fi,S.gc_fni,tostring(oOn),oX,oY,
+        S.gc_t,tostring(S.gc_aa),tostring(S.gc_re),S.gc_ri,S.gc_rmin,S.gc_rmax,S.gc_fi,S.gc_fni,tostring(oOn),oX,oY,
         oR,oG,oB,oA,oSz,oFi,tostring(oBgOn),oBgR,oBgG,oBgB,oBgA,
         kbr,kbi,kbc,kbrn,kbf,
         S.gc_rc,S.gc_fc))
@@ -186,15 +188,16 @@ local function ld()
     local ok,raw=pcall(readfile,CFG)
     if not ok then return false end
     local function nm(k) local v=raw:match('"'..k..'":([%-%d%.]+)'); return v and tonumber(v) end
-    local function bl(k) return raw:match('"'..k..'":(%a+)')=="true" end
+    local function bl(k) local v=raw:match('"'..k..'":(%a+)'); if v==nil then return nil end; return v=="true" end
     S.gc_t=nm("gravity") or S.gc_t
-    S.gc_aa=bl("autoApply")
+    local aa=bl("autoApply"); if aa~=nil then S.gc_aa=aa end
+    local re=bl("reApply"); if re~=nil then S.gc_re=re end
     S.gc_ri=nm("randomInterval") or S.gc_ri
     S.gc_rmin=nm("randomMin") or S.gc_rmin
     S.gc_rmax=nm("randomMax") or S.gc_rmax
     S.gc_fi=nm("flipInterval") or S.gc_fi
     S.gc_fni=nm("flipNormalInterval") or S.gc_fni
-    oOn=bl("overlay")
+    oOn=bl("overlay") or oOn
     oX=nm("overlayX") or oX
     oY=nm("overlayY") or oY
     oR=nm("ovR") or oR
@@ -203,7 +206,7 @@ local function ld()
     oA=nm("ovA") or oA
     oSz=nm("ovSize") or oSz
     oFi=nm("ovFont") or oFi
-    oBgOn=bl("bgOn")
+    oBgOn=bl("bgOn") or oBgOn
     oBgR=nm("bgR") or oBgR
     oBgG=nm("bgG") or oBgG
     oBgB=nm("bgB") or oBgB
@@ -213,6 +216,8 @@ local function ld()
     S.gc_rn=false
     S.gc_fn=false
     S.gc_fst=0
+    S.gc_ftime=0
+    S.gc_rtime=0
     local kr=nm("kbReset")
     local ki=nm("kbInvert")
     local kc=nm("kbCustom")
@@ -227,15 +232,15 @@ local function ld()
 end
 
 local function ap(v)
-    S.gc_t,S.gc_la=v,v
+    S.gc_t=v
     sg(v)
     UI.SetValue("grav_value",v)
 end
 
 local function setDefaults()
     S.gc_t=196.2
-    S.gc_la=nil
     S.gc_aa=true
+    S.gc_re=true
     S.gc_rn=false
     S.gc_ri=3.0
     S.gc_rmin=-200.0
@@ -244,6 +249,8 @@ local function setDefaults()
     S.gc_fi=2.0
     S.gc_fni=1.0
     S.gc_fst=0
+    S.gc_ftime=0
+    S.gc_rtime=0
     S.gc_rc=0
     S.gc_fc=0
     oOn=true
@@ -266,6 +273,7 @@ end
 local function syncUI()
     UI.SetValue("grav_value",S.gc_t)
     UI.SetValue("grav_auto",S.gc_aa)
+    UI.SetValue("grav_reapply",S.gc_re)
     UI.SetValue("grav_random",false)
     UI.SetValue("grav_rand_min",S.gc_rmin)
     UI.SetValue("grav_rand_max",S.gc_rmax)
@@ -313,15 +321,94 @@ for i=1,N do
     ov[i]=t
 end
 
+task.spawn(function()
+    local last=tick()
+    while true do
+        local now=tick()
+        local dt=now-last
+        last=now
+        if S.gc_fn then
+            S.gc_ftime=S.gc_ftime+dt
+            local limit=S.gc_fst==0 and S.gc_fi or S.gc_fni
+            if S.gc_ftime>=limit then
+                S.gc_ftime=0
+                if S.gc_fst==0 then
+                    S.gc_t=-math.abs(S.gc_t)
+                    S.gc_fst=1
+                    S.gc_fc=S.gc_fc+1
+                else
+                    S.gc_t=math.abs(S.gc_t)
+                    S.gc_fst=0
+                end
+                UI.SetValue("grav_value",S.gc_t)
+                sv()
+                UI.SetValue("grav_preset",0)
+            end
+        else
+            S.gc_fst=0
+            S.gc_ftime=0
+        end
+        task.wait()
+    end
+end)
+
+task.spawn(function()
+    local last=tick()
+    while true do
+        local now=tick()
+        local dt=now-last
+        last=now
+        if S.gc_rn then
+            S.gc_rtime=S.gc_rtime+dt
+            if S.gc_rtime>=S.gc_ri then
+                S.gc_rtime=0
+                local r=roll()
+                S.gc_t=r
+                S.gc_rc=S.gc_rc+1
+                UI.SetValue("grav_value",r)
+                sv()
+                UI.SetValue("grav_preset",0)
+                notify(string.format("Random: %.1f",r),"Gravity Changer+",1)
+            end
+        else
+            S.gc_rtime=0
+        end
+        task.wait()
+    end
+end)
+
+-- RE-APPLY: обёрнут в pcall, чтобы таск не умирал при ошибке
+task.spawn(function()
+    while true do
+        pcall(function()
+            if S.gc_re and WORLD_OFF and GRAV_OFF and S.gc_t then
+                local ok,p=pcall(memory_read,"uintptr_t",workspace.Address+WORLD_OFF)
+                if ok and p and p~=0 then
+                    local ok2,v=pcall(memory_read,"float",p+GRAV_OFF)
+                    if ok2 and v and v==v then
+                        if math.abs(v-S.gc_t)>0.01 then
+                            pcall(memory_write,"float",p+GRAV_OFF,S.gc_t)
+                            pcall(memory_write,"float",p+GRAV_OFF-4,S.gc_t)
+                        end
+                    end
+                end
+            end
+        end)
+        task.wait()
+    end
+end)
+
 local function bindFlip()
     S.gc_fn=not S.gc_fn
     S.gc_fst=0
+    S.gc_ftime=0
     UI.SetValue("grav_flip",S.gc_fn)
     notify(S.gc_fn and "Flip: ON" or "Flip: OFF","Gravity Changer+",1.5)
 end
 
 local function bindRandom()
     S.gc_rn=not S.gc_rn
+    S.gc_rtime=0
     UI.SetValue("grav_random",S.gc_rn)
     notify(S.gc_rn and "Random: ON" or "Random: OFF","Gravity Changer+",1.5)
 end
@@ -426,56 +513,6 @@ end)
 
 task.spawn(function()
     while true do
-        if S.gc_aa and S.gc_la~=S.gc_t then
-            sg(S.gc_t)
-            S.gc_la=S.gc_t
-        end
-        wait(0.1)
-    end
-end)
-
-task.spawn(function()
-    while true do
-        if S.gc_rn then
-            local r,lo,hi=roll()
-            ap(r)
-            S.gc_rc=S.gc_rc+1
-            sv()
-            UI.SetValue("grav_preset",0)
-            notify(string.format("Random: %.1f  [%.0f ... %.0f]",r,lo,hi),"Gravity Changer+",1)
-            wait(S.gc_ri)
-        else
-            wait(0.1)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        if S.gc_fn then
-            if S.gc_fst==0 then
-                ap(-math.abs(S.gc_t))
-                S.gc_fc=S.gc_fc+1
-                S.gc_fst=1
-                sv()
-                UI.SetValue("grav_preset",0)
-                wait(S.gc_fi)
-            else
-                ap(math.abs(S.gc_t))
-                S.gc_fst=0
-                sv()
-                UI.SetValue("grav_preset",0)
-                wait(S.gc_fni)
-            end
-        else
-            S.gc_fst=0
-            wait(0.1)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
         wait(30)
         if not WORLD_OFF or not GRAV_OFF then
             resolveOffsets()
@@ -495,13 +532,19 @@ UI.AddTab("Gravity Changer+",function(tab)
     L:SliderFloat("grav_value","Gravity",-1000,1000,S.gc_t,"%.1f",function(v)
         S.gc_t=v
         UI.SetValue("grav_preset",0)
-        if S.gc_aa then sg(v); S.gc_la=v end
+        if S.gc_aa then sg(v) end
     end)
     L:Toggle("grav_auto","Auto-Apply",S.gc_aa,function(v)
         S.gc_aa=v
-        if v then sg(S.gc_t); S.gc_la=S.gc_t else S.gc_la=nil end
+        if v then sg(S.gc_t) end
     end)
-    L:Button("Apply Now",100,20,function() sg(S.gc_t); S.gc_la=S.gc_t end)
+    L:Toggle("grav_reapply","Re-Apply",S.gc_re,function(v)
+        S.gc_re=v
+        if v then sg(S.gc_t) end
+    end)
+    L:Spacing()
+    L:Text("Re-Apply: keeps every frame if game resets")
+    L:Button("Apply Now",100,20,function() sg(S.gc_t) end)
     L:Button("Reset Gravity",100,20,function()
         ap(196.2)
         UI.SetValue("grav_preset",1)
@@ -589,7 +632,10 @@ UI.AddTab("Gravity Changer+",function(tab)
     end)
 
     local R=tab:Section("Random Gravity","Right")
-    R:Toggle("grav_random","Enable Random",false,function(v) S.gc_rn=v end)
+    R:Toggle("grav_random","Enable Random",false,function(v)
+        S.gc_rn=v
+        S.gc_rtime=0
+    end)
     KB.rnd=R:Keybind("grav_kb_random",0,"hold")
     R:SliderFloat("grav_rand_min","Min",-2000,2000,S.gc_rmin,"%.0f",function(v)
         S.gc_rmin=v
@@ -608,7 +654,11 @@ UI.AddTab("Gravity Changer+",function(tab)
     end)
 
     local F=tab:Section("Flip Gravity","Right")
-    F:Toggle("grav_flip","Enable Flip",false,function(v) S.gc_fn=v; S.gc_fst=0 end)
+    F:Toggle("grav_flip","Enable Flip",false,function(v)
+        S.gc_fn=v
+        S.gc_fst=0
+        S.gc_ftime=0
+    end)
     KB.flip=F:Keybind("grav_kb_flip",0,"hold")
     F:SliderFloat("grav_flip_int","Inverted Gravity Time (sec)",0.2,10.0,S.gc_fi,"%.1f",function(v) S.gc_fi=v end)
     F:SliderFloat("grav_flip_nint","Normal Gravity Time (sec)",0.2,10.0,S.gc_fni,"%.1f",function(v) S.gc_fni=v end)
@@ -629,7 +679,7 @@ UI.AddTab("Gravity Changer+",function(tab)
         if ld() then
             rebuildCpCombo()
             syncUI()
-            sg(S.gc_t); S.gc_la=S.gc_t
+            sg(S.gc_t)
             cpInputName=""
             notify("Config loaded","Gravity Changer+",1.5)
         end
@@ -637,7 +687,7 @@ UI.AddTab("Gravity Changer+",function(tab)
     C:Button("Reset to Default",100,20,function()
         setDefaults()
         syncUI()
-        sg(S.gc_t); S.gc_la=S.gc_t
+        sg(S.gc_t)
         cpInputName=""
         notify("Reset to defaults","Gravity Changer+",1.5)
     end)
@@ -645,7 +695,7 @@ UI.AddTab("Gravity Changer+",function(tab)
         if isfile(CFG) then delfile(CFG) end
         setDefaults()
         syncUI()
-        sg(S.gc_t); S.gc_la=S.gc_t
+        sg(S.gc_t)
         cpInputName=""
         notify("Config deleted (custom presets kept)","Gravity Changer+",1.5)
     end)
