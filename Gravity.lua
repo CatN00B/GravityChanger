@@ -197,7 +197,7 @@ local function ld()
     S.gc_rmax=nm("randomMax") or S.gc_rmax
     S.gc_fi=nm("flipInterval") or S.gc_fi
     S.gc_fni=nm("flipNormalInterval") or S.gc_fni
-    oOn=bl("overlay") or oOn
+    local ov=bl("overlay"); if ov~=nil then oOn=ov end
     oX=nm("overlayX") or oX
     oY=nm("overlayY") or oY
     oR=nm("ovR") or oR
@@ -206,7 +206,7 @@ local function ld()
     oA=nm("ovA") or oA
     oSz=nm("ovSize") or oSz
     oFi=nm("ovFont") or oFi
-    oBgOn=bl("bgOn") or oBgOn
+    local bgo=bl("bgOn"); if bgo~=nil then oBgOn=bgo end
     oBgR=nm("bgR") or oBgR
     oBgG=nm("bgG") or oBgG
     oBgB=nm("bgB") or oBgB
@@ -274,11 +274,11 @@ local function syncUI()
     UI.SetValue("grav_value",S.gc_t)
     UI.SetValue("grav_auto",S.gc_aa)
     UI.SetValue("grav_reapply",S.gc_re)
-    UI.SetValue("grav_random",false)
+    UI.SetValue("grav_random",S.gc_rn)
     UI.SetValue("grav_rand_min",S.gc_rmin)
     UI.SetValue("grav_rand_max",S.gc_rmax)
     UI.SetValue("grav_random_int",S.gc_ri)
-    UI.SetValue("grav_flip",false)
+    UI.SetValue("grav_flip",S.gc_fn)
     UI.SetValue("grav_flip_int",S.gc_fi)
     UI.SetValue("grav_flip_nint",S.gc_fni)
     UI.SetValue("grav_overlay",oOn)
@@ -377,7 +377,6 @@ task.spawn(function()
     end
 end)
 
--- RE-APPLY: обёрнут в pcall, чтобы таск не умирал при ошибке
 task.spawn(function()
     while true do
         pcall(function()
@@ -402,6 +401,12 @@ local function bindFlip()
     S.gc_fn=not S.gc_fn
     S.gc_fst=0
     S.gc_ftime=0
+    if not S.gc_fn then
+        S.gc_fc=0
+        S.gc_t=math.abs(S.gc_t)
+        sg(S.gc_t)
+        UI.SetValue("grav_value",S.gc_t)
+    end
     UI.SetValue("grav_flip",S.gc_fn)
     notify(S.gc_fn and "Flip: ON" or "Flip: OFF","Gravity Changer+",1.5)
 end
@@ -409,6 +414,7 @@ end
 local function bindRandom()
     S.gc_rn=not S.gc_rn
     S.gc_rtime=0
+    if not S.gc_rn then S.gc_rc=0 end
     UI.SetValue("grav_random",S.gc_rn)
     notify(S.gc_rn and "Random: ON" or "Random: OFF","Gravity Changer+",1.5)
 end
@@ -452,8 +458,8 @@ task.spawn(function()
         if oOn then
             local cur=rg() or 0
             local lh=oSz+4
-            local rnd=S.gc_rn or S.gc_rc>0
-            local flp=S.gc_fn or S.gc_fc>0
+            local rnd=S.gc_rn
+            local flp=S.gc_fn
             local counter=nil
             if rnd and flp then counter=string.format("RND:%d  FLIP:%d",S.gc_rc,S.gc_fc)
             elseif rnd then counter=string.format("RND:%d",S.gc_rc)
@@ -624,17 +630,12 @@ UI.AddTab("Gravity Changer+",function(tab)
     O:SliderInt("grav_ov_size","Size",8,48,oSz,function(v) oSz=v end)
     O:SliderInt("grav_ov_x","X",0,1920,oX,function(v) oX=v end)
     O:SliderInt("grav_ov_y","Y",0,1080,oY,function(v) oY=v end)
-    O:Button("Reset Stats",100,20,function()
-        S.gc_rc=0
-        S.gc_fc=0
-        sv()
-        notify("Stats reset","Gravity Changer+",1.5)
-    end)
 
     local R=tab:Section("Random Gravity","Right")
-    R:Toggle("grav_random","Enable Random",false,function(v)
+    R:Toggle("grav_random","Enable Random",S.gc_rn,function(v)
         S.gc_rn=v
         S.gc_rtime=0
+        if not v then S.gc_rc=0 end
     end)
     KB.rnd=R:Keybind("grav_kb_random",0,"hold")
     R:SliderFloat("grav_rand_min","Min",-2000,2000,S.gc_rmin,"%.0f",function(v)
@@ -654,10 +655,16 @@ UI.AddTab("Gravity Changer+",function(tab)
     end)
 
     local F=tab:Section("Flip Gravity","Right")
-    F:Toggle("grav_flip","Enable Flip",false,function(v)
+    F:Toggle("grav_flip","Enable Flip",S.gc_fn,function(v)
         S.gc_fn=v
         S.gc_fst=0
         S.gc_ftime=0
+        if not v then
+            S.gc_fc=0
+            S.gc_t=math.abs(S.gc_t)
+            sg(S.gc_t)
+            UI.SetValue("grav_value",S.gc_t)
+        end
     end)
     KB.flip=F:Keybind("grav_kb_flip",0,"hold")
     F:SliderFloat("grav_flip_int","Inverted Gravity Time (sec)",0.2,10.0,S.gc_fi,"%.1f",function(v) S.gc_fi=v end)
